@@ -26,16 +26,14 @@ function addMessage(text, sender = 'chatbot') {
 }
 
 function showTextInput(placeholder, currentVal = '') {
-    // console.log("showTextInput called with placeholder:", placeholder); // 디버깅용
-    if (userInput && sendButton) { // userInput과 sendButton이 null이 아닌지 확인
+    if (userInput && sendButton) {
         userInput.style.display = 'block'; // 'block'으로 설정하여 입력창을 보이게 합니다.
         sendButton.style.display = 'block'; // 'block'으로 설정하여 전송 버튼을 보이게 합니다.
         userInput.placeholder = placeholder;
         userInput.value = currentVal;
         userInput.focus();
-        // console.log("userInput and sendButton display set to block."); // 디버깅용
     } else {
-        console.error("Error: userInput or sendButton not found in DOM!"); // 요소 못 찾을 경우 에러
+        console.error("Error: userInput or sendButton not found in DOM!");
     }
 }
 
@@ -74,9 +72,8 @@ function showLoading(message = '처리 중...') {
 // --- 데이터 관리 함수 ---
 function saveUsersData() {
     localStorage.setItem('moneyManagerUsers', JSON.stringify(users));
-    if (currentUser) {
-        localStorage.setItem('lastLoggedInUser', currentUser); // 마지막 로그인 사용자 저장
-    }
+    // 초기 시작 시 기존 사용자 선택을 원하지 않으므로, lastLoggedInUser 저장은 주석 처리하거나 제거
+    // localStorage.setItem('lastLoggedInUser', currentUser); 
     updateTopBar(); // 데이터 저장 후 상단바 업데이트
 }
 
@@ -140,7 +137,7 @@ function setUserName(name) {
     } else {
         addMessage(`다시 오신 것을 환영합니다, ${currentUser}님!`, 'chatbot');
     }
-    saveUsersData(); // 사용자 데이터를 저장하고 `lastLoggedInUser`도 저장
+    saveUsersData(); // 사용자 데이터를 저장 (lastLoggedInUser는 저장 안함)
     updateTopBar();
     showMainMenu();
 }
@@ -154,6 +151,8 @@ function showMainMenu() {
     addMessage('무엇을 도와드릴까요?');
     addButton('수입 기록하기', () => showAddIncomeFlow(), 'primary');
     addButton('수입 항목 관리', () => showManageItemsMenu());
+    addButton('요약 보기', () => showSummary()); // ✨ 1. 요약 버튼 추가
+    addButton('내역 보기', () => showMonthlyRecords()); // ✨ 3. 내역 보기 버튼 추가
     addButton('다른 사용자 전환', () => {
         addMessage('다른 사용자로 전환합니다. 이름을 입력해주세요.');
         showTextInput('이름을 입력하세요.');
@@ -199,9 +198,7 @@ function setIncomeAmount(amountStr) {
     }
 
     const { item, date } = awaitingInputFor;
-    // const today = new Date().toISOString().slice(0, 10); // 사용되지 않음
 
-    // 사용자에게 입력된 금액과 기본 날짜를 보여주고, 날짜 수정 여부 묻기
     addMessage(`${amount.toLocaleString()}원을 "${item}" 항목으로 기록합니다. 날짜는 ${date}입니다.`);
     clearInputAreaButtons();
     addMessage(`날짜를 수정하시겠습니까?`);
@@ -216,10 +213,9 @@ function showDateInputForRecord(item, amount, currentDate) {
     hideTextInput();
     addMessage(`날짜를 선택하거나 직접 입력해주세요 (YYYY-MM-DD 형식). 현재: ${currentDate}`);
 
-    // 날짜 입력 필드를 inputArea에 직접 추가
     const dateInput = document.createElement('input');
     dateInput.type = 'date';
-    dateInput.id = 'datePicker'; // ID 부여 (선택 사항이지만 유용)
+    dateInput.id = 'datePicker';
     dateInput.value = currentDate;
     inputArea.appendChild(dateInput);
 
@@ -255,7 +251,6 @@ function finalizeIncomeRecord(item, amount, date) {
 
     showMainMenu();
 }
-
 
 // 수입 항목 관리 메뉴
 function showManageItemsMenu() {
@@ -340,6 +335,86 @@ function removeItem(itemName) {
     showManageItemsMenu();
 }
 
+// ✨ 1. 이번 달 항목별 수입 요약 함수
+function showSummary() {
+    clearInputAreaButtons();
+    hideTextInput();
+    awaitingInputFor = null;
+
+    const user = getCurrentUser();
+    if (!user || user.records.length === 0) {
+        addMessage('아직 기록된 수입 내역이 없습니다.');
+        addButton('메인 메뉴로', () => showMainMenu());
+        return;
+    }
+
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth(); // 0-11
+
+    const monthlySummary = {};
+    let totalThisMonth = 0;
+
+    user.records.forEach(record => {
+        const recordDate = new Date(record.date);
+        if (recordDate.getFullYear() === currentYear && recordDate.getMonth() === currentMonth) {
+            monthlySummary[record.item] = (monthlySummary[record.item] || 0) + record.amount;
+            totalThisMonth += record.amount;
+        }
+    });
+
+    if (Object.keys(monthlySummary).length === 0) {
+        addMessage(`이번 달(${currentYear}년 ${currentMonth + 1}월) 기록된 수입이 없습니다.`);
+    } else {
+        let summaryMessage = `**이번 달(${currentYear}년 ${currentMonth + 1}월) 수입 요약:**\n\n`;
+        for (const item in monthlySummary) {
+            summaryMessage += `- ${item}: ${monthlySummary[item].toLocaleString()}원\n`;
+        }
+        summaryMessage += `\n**총 수입: ${totalThisMonth.toLocaleString()}원**`;
+        addMessage(summaryMessage, 'chatbot');
+    }
+
+    addButton('메인 메뉴로', () => showMainMenu());
+}
+
+// ✨ 3. 이번 달 수입 내역을 보여주는 함수
+function showMonthlyRecords() {
+    clearInputAreaButtons();
+    hideTextInput();
+    awaitingInputFor = null;
+
+    const user = getCurrentUser();
+    if (!user || user.records.length === 0) {
+        addMessage('아직 기록된 수입 내역이 없습니다.');
+        addButton('메인 메뉴로', () => showMainMenu());
+        return;
+    }
+
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth(); // 0-11
+
+    const monthlyRecords = user.records.filter(record => {
+        const recordDate = new Date(record.date);
+        return recordDate.getFullYear() === currentYear && recordDate.getMonth() === currentMonth;
+    });
+
+    if (monthlyRecords.length === 0) {
+        addMessage(`이번 달(${currentYear}년 ${currentMonth + 1}월) 기록된 수입 내역이 없습니다.`);
+    } else {
+        // 날짜를 기준으로 오름차순 정렬
+        monthlyRecords.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        let recordsMessage = `**이번 달(${currentYear}년 ${currentMonth + 1}월) 수입 내역:**\n\n`;
+        monthlyRecords.forEach(record => {
+            recordsMessage += `- ${record.date}: ${record.item} - ${record.amount.toLocaleString()}원\n`;
+        });
+        addMessage(recordsMessage, 'chatbot');
+    }
+
+    addButton('메인 메뉴로', () => showMainMenu());
+}
+
 // --- 이벤트 리스너 ---
 sendButton.addEventListener('click', () => {
     const inputText = userInput.value.trim();
@@ -373,20 +448,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const storedUsers = JSON.parse(localStorage.getItem('moneyManagerUsers')) || {};
     users = storedUsers; // 전역 users 변수에 localStorage 데이터 할당
 
-    const lastLoggedInUser = localStorage.getItem('lastLoggedInUser');
-
-    if (lastLoggedInUser && users[lastLoggedInUser]) {
-        currentUser = lastLoggedInUser;
-        updateTopBar();
-        addMessage(`어서오세요, ${currentUser}님!`, 'chatbot');
-        showMainMenu();
-    } else if (Object.keys(users).length > 0) {
-        // 기존 사용자는 있지만, 마지막 로그인 기록이 없거나 유효하지 않은 경우
-        addMessage('안녕하세요! 어떤 사용자이신가요? 등록된 사용자: ' + Object.keys(users).join(', ') + ' 또는 새로운 이름 입력');
-        showTextInput('이름을 입력하세요.');
-        awaitingInputFor = 'userName';
-    } else {
-        // 등록된 사용자가 전혀 없는 경우
-        startChat();
-    }
+    // ✨ 2. 초기 로드 시 항상 이름을 묻는 단계로 시작하도록 변경
+    addMessage('안녕하세요! 당신의 이름이 무엇인가요? (예: "김철수")');
+    showTextInput('이름을 입력하세요.');
+    awaitingInputFor = 'userName';
 });
