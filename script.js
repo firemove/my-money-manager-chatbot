@@ -9,7 +9,7 @@ const currentMonthIncomeSpan = document.getElementById('current-month-income');
 
 // --- 데이터 구조 ---
 // users: { "사용자이름": { items: ["급여", "용돈"], records: [{ item: "급여", amount: 100000, date: "2025-07-22" }] } }
-let users = JSON.parse(localStorage.getItem('moneyManagerUsers')) || {};
+let users = {}; // 초기화 시 localStorage에서 로드
 let currentUser = null; // 현재 로그인한 사용자 이름
 
 // --- 챗봇 상태 관리 ---
@@ -26,11 +26,17 @@ function addMessage(text, sender = 'chatbot') {
 }
 
 function showTextInput(placeholder, currentVal = '') {
-    userInput.style.display = 'block';
-    sendButton.style.display = 'block';
-    userInput.placeholder = placeholder;
-    userInput.value = currentVal; // 기존 값 설정 (수정 시 유용)
-    userInput.focus();
+    // console.log("showTextInput called with placeholder:", placeholder); // 디버깅용
+    if (userInput && sendButton) { // userInput과 sendButton이 null이 아닌지 확인
+        userInput.style.display = 'block'; // 'block'으로 설정하여 입력창을 보이게 합니다.
+        sendButton.style.display = 'block'; // 'block'으로 설정하여 전송 버튼을 보이게 합니다.
+        userInput.placeholder = placeholder;
+        userInput.value = currentVal;
+        userInput.focus();
+        // console.log("userInput and sendButton display set to block."); // 디버깅용
+    } else {
+        console.error("Error: userInput or sendButton not found in DOM!"); // 요소 못 찾을 경우 에러
+    }
 }
 
 function hideTextInput() {
@@ -40,7 +46,13 @@ function hideTextInput() {
 }
 
 function clearInputAreaButtons() {
-    inputArea.innerHTML = '';
+    // inputArea에서 userInput과 sendButton을 제외한 모든 자식 요소를 제거
+    const children = Array.from(inputArea.children);
+    for (const child of children) {
+        if (child !== userInput && child !== sendButton) {
+            inputArea.removeChild(child);
+        }
+    }
 }
 
 function addButton(text, onClickHandler, className = '') {
@@ -62,6 +74,9 @@ function showLoading(message = '처리 중...') {
 // --- 데이터 관리 함수 ---
 function saveUsersData() {
     localStorage.setItem('moneyManagerUsers', JSON.stringify(users));
+    if (currentUser) {
+        localStorage.setItem('lastLoggedInUser', currentUser); // 마지막 로그인 사용자 저장
+    }
     updateTopBar(); // 데이터 저장 후 상단바 업데이트
 }
 
@@ -125,7 +140,7 @@ function setUserName(name) {
     } else {
         addMessage(`다시 오신 것을 환영합니다, ${currentUser}님!`, 'chatbot');
     }
-    saveUsersData();
+    saveUsersData(); // 사용자 데이터를 저장하고 `lastLoggedInUser`도 저장
     updateTopBar();
     showMainMenu();
 }
@@ -184,7 +199,7 @@ function setIncomeAmount(amountStr) {
     }
 
     const { item, date } = awaitingInputFor;
-    const today = new Date().toISOString().slice(0, 10);
+    // const today = new Date().toISOString().slice(0, 10); // 사용되지 않음
 
     // 사용자에게 입력된 금액과 기본 날짜를 보여주고, 날짜 수정 여부 묻기
     addMessage(`${amount.toLocaleString()}원을 "${item}" 항목으로 기록합니다. 날짜는 ${date}입니다.`);
@@ -201,9 +216,10 @@ function showDateInputForRecord(item, amount, currentDate) {
     hideTextInput();
     addMessage(`날짜를 선택하거나 직접 입력해주세요 (YYYY-MM-DD 형식). 현재: ${currentDate}`);
 
+    // 날짜 입력 필드를 inputArea에 직접 추가
     const dateInput = document.createElement('input');
     dateInput.type = 'date';
-    dateInput.id = 'datePicker';
+    dateInput.id = 'datePicker'; // ID 부여 (선택 사항이지만 유용)
     dateInput.value = currentDate;
     inputArea.appendChild(dateInput);
 
@@ -351,24 +367,26 @@ userInput.addEventListener('keypress', (e) => {
 
 // --- 초기화 ---
 // 페이지 로드 시 사용자 데이터 확인 및 챗봇 시작
-// 현재 날짜를 기반으로 초기 월별 수입액을 계산합니다.
-const today = new Date();
-const currentYear = today.getFullYear();
-const currentMonth = today.getMonth(); // 0-11
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("DOMContentLoaded event fired. Initializing chat.");
 
-if (currentUser === null) { // 초기 로드 시 `currentUser`는 null
-    const storedUsers = JSON.parse(localStorage.getItem('moneyManagerUsers'));
-    if (Object.keys(storedUsers || {}).length > 0) {
-        addMessage('안녕하세요! 어떤 사용자이신가요? 등록된 사용자: ' + Object.keys(storedUsers).join(', ') + ' 또는 새로운 이름 입력');
+    const storedUsers = JSON.parse(localStorage.getItem('moneyManagerUsers')) || {};
+    users = storedUsers; // 전역 users 변수에 localStorage 데이터 할당
+
+    const lastLoggedInUser = localStorage.getItem('lastLoggedInUser');
+
+    if (lastLoggedInUser && users[lastLoggedInUser]) {
+        currentUser = lastLoggedInUser;
+        updateTopBar();
+        addMessage(`어서오세요, ${currentUser}님!`, 'chatbot');
+        showMainMenu();
+    } else if (Object.keys(users).length > 0) {
+        // 기존 사용자는 있지만, 마지막 로그인 기록이 없거나 유효하지 않은 경우
+        addMessage('안녕하세요! 어떤 사용자이신가요? 등록된 사용자: ' + Object.keys(users).join(', ') + ' 또는 새로운 이름 입력');
         showTextInput('이름을 입력하세요.');
         awaitingInputFor = 'userName';
     } else {
-        startChat(); // 저장된 사용자 없으면 바로 이름 질문
+        // 등록된 사용자가 전혀 없는 경우
+        startChat();
     }
-} else {
-    // 페이지 새로고침 시 기존 사용자 유지 (localstorage에서 이미 불러왔으므로)
-    updateTopBar();
-    addMessage(`어서오세요, ${currentUser}님!`);
-    showMainMenu();
-}
-updateTopBar(); // 초기 로드 시에도 상단바 업데이트
+});
